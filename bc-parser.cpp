@@ -26,10 +26,10 @@ int main(int argc, char** argv)
   } else {
     void* scanner;
     cout<<"Using parser2"<<endl;
-    yylex_init(&scanner);
-    yyset_in(stdin, scanner);
+    zzlex_init(&scanner);
+    zzset_in(stdin, scanner);
 
-    int rvalue = yyparse(scanner, output);
+    int rvalue = zzparse(scanner, output);
     if(rvalue == 1){
 
       cout<<"Parsing failed"<<endl;

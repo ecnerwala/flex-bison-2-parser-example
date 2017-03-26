@@ -2,9 +2,10 @@
 
 #include <iostream>
 #include <string>
-#define YY_DECL int yylex (YYSTYPE* yylval, YYLTYPE * yylloc, yyscan_t yyscanner)
+#undef YY_DECL
+#define YY_DECL int zzlex (ZZSTYPE* yylval, ZZLTYPE * yylloc, yyscan_t yyscanner)
 #ifndef FLEX_SCANNER 
-#include "lexer.h"
+#include "lexer2.h"
 #endif 
 
 using namespace std;
@@ -31,13 +32,15 @@ using namespace std;
 
 #include <cassert>
 
-int32_t safe_cast(int64_t value);
-uint32_t safe_unsigned_cast(int64_t value);
+int32_t safe_cast_2(int64_t value);
+uint32_t safe_unsigned_cast_2(int64_t value);
 
 }
 
 
 %define api.pure full
+%define api.prefix {zz}
+%define api.token.prefix {T2_}
 %parse-param {yyscan_t yyscanner} {Function*& out}
 %lex-param {yyscan_t yyscanner}
 %locations 
@@ -45,7 +48,7 @@ uint32_t safe_unsigned_cast(int64_t value);
 
 %code provides{
 YY_DECL;
-int yyerror(YYLTYPE * yylloc, yyscan_t yyscanner, Function*& out, const char* message);
+int yyerror(ZZLTYPE * yylloc, yyscan_t yyscanner, Function*& out, const char* message);
 }
 
 
@@ -158,7 +161,7 @@ Function:
   T_instructions '=' '[' InstructionList ']' 
   '}'
 {
-	$$ = new Function{*$6, *$12, safe_unsigned_cast($17), *$22, *$28, *$34, *$40, *$46};
+	$$ = new Function{*$6, *$12, safe_unsigned_cast_2($17), *$22, *$28, *$34, *$40, *$46};
 
     out = $$;
 }
@@ -267,32 +270,32 @@ Constant
 Instruction:	
   T_load_const T_int
 {
-	$$ = new Instruction(Operation::LoadConst, safe_unsigned_cast($2));
+	$$ = new Instruction(Operation::LoadConst, safe_unsigned_cast_2($2));
 }
 | T_load_func T_int
 {
-	$$ = new Instruction(Operation::LoadFunc, safe_unsigned_cast($2));
+	$$ = new Instruction(Operation::LoadFunc, safe_unsigned_cast_2($2));
 }
 
 | T_load_local T_int
 {
-	$$ = new Instruction(Operation::LoadLocal, safe_unsigned_cast($2));
+	$$ = new Instruction(Operation::LoadLocal, safe_unsigned_cast_2($2));
 }
 | T_store_local T_int
 {
-	$$ = new Instruction(Operation::StoreLocal, safe_unsigned_cast($2));
+	$$ = new Instruction(Operation::StoreLocal, safe_unsigned_cast_2($2));
 }
 | T_load_global T_int
 {
-	$$ = new Instruction(Operation::LoadGlobal, safe_unsigned_cast($2));
+	$$ = new Instruction(Operation::LoadGlobal, safe_unsigned_cast_2($2));
 }
 | T_store_global T_int
 {
-	$$ = new Instruction(Operation::StoreGlobal, safe_unsigned_cast($2));
+	$$ = new Instruction(Operation::StoreGlobal, safe_unsigned_cast_2($2));
 }
 | T_push_ref T_int
 {
-	$$ = new Instruction(Operation::PushReference, safe_unsigned_cast($2));
+	$$ = new Instruction(Operation::PushReference, safe_unsigned_cast_2($2));
 }
 | T_load_ref
 {
@@ -308,11 +311,11 @@ Instruction:
 }
 | T_field_load T_int
 {
-	$$ = new Instruction(Operation::FieldLoad, safe_unsigned_cast($2));
+	$$ = new Instruction(Operation::FieldLoad, safe_unsigned_cast_2($2));
 }
 | T_field_store T_int
 {
-	$$ = new Instruction(Operation::FieldStore, safe_unsigned_cast($2));
+	$$ = new Instruction(Operation::FieldStore, safe_unsigned_cast_2($2));
 }
 | T_index_load
 {
@@ -380,11 +383,11 @@ Instruction:
 }
 | T_goto T_int
 {
-	$$ = new Instruction(Operation::Goto, safe_cast($2));	
+	$$ = new Instruction(Operation::Goto, safe_cast_2($2));	
 }
 | T_if T_int
 {
-	$$ = new Instruction(Operation::If, safe_cast($2));	
+	$$ = new Instruction(Operation::If, safe_cast_2($2));	
 }
 | T_dup
 {
@@ -419,7 +422,7 @@ int yyerror(YYLTYPE * yylloc, void* p, Function*& out, const char*  msg){
   return 0;
 }
 
-int32_t safe_cast(int64_t value)
+int32_t safe_cast_2(int64_t value)
 {	
 	int32_t new_value = (int32_t) value;
 
@@ -429,7 +432,7 @@ int32_t safe_cast(int64_t value)
 }
 
 
-uint32_t safe_unsigned_cast(int64_t value)
+uint32_t safe_unsigned_cast_2(int64_t value)
 {	
 	int32_t new_value = (uint32_t) value;
 
