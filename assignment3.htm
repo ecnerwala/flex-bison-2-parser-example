@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Assignment 3</title>
+<link rel="stylesheet" href="https://stackedit.io/res-min/themes/base.css" />
+<script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body><div class="container"><h1 id="assignment-3-low-level-virtual-machine">Assignment 3: Low-Level Virtual Machine</h1>
+
+<p>Your goal for this assignment is to implement a bytecode compiler and interpreter for the MITScript Virtual Machine. Your bytecode compiler will take as input your parsed MITScript AST and generate a low-level bytecode-style intermediate representation. Given that intermediate representation, your interpreter will execute the bytecode to produce the program's results.</p>
+
+<p>This assignment also includes a written portion that each member of the group will submit separately.</p>
+
+<p><strong>Deadline</strong>: April 7th, 2017</p>
+
+
+
+<h2 id="mitscript-virtual-machine-by-example">MITScript Virtual Machine (by Example)</h2>
+
+<p>The MITScript VM provides a low-level, stack-based machine abstraction of the execution of a program. </p>
+
+<p>As discussed in lecture, virtual machines provide a syntax-independent and platform-independent (e.g. x86) mechanism to specify a program representation and execution model. As a strong distinction between your bytecode interpreter from assignment #2, your representation here is <em>flat</em> in that the body of a function is a straight-line sequence of simple non-recursive operations.</p>
+
+<p>The MITScript VM abstracts an MITScript program into a single function that 1) contains multiple nested functions (each of which correspond to the creation of a closure) and 2) has a list of instructions that when executed augment an <em>operand stack</em> and the heap. </p>
+
+<p>We illustrate the basic structures of an MITScript VM bytecode representation with the following MITScript program snippet:</p>
+
+
+
+<pre class="prettyprint"><code class=" hljs ini"><span class="hljs-setting">x = <span class="hljs-value"><span class="hljs-number">1</span>;</span></span>
+<span class="hljs-setting">y = <span class="hljs-value"><span class="hljs-number">2</span>;</span></span>
+<span class="hljs-setting">z = <span class="hljs-value">x + y;</span></span></code></pre>
+
+<p>One possible translation of this MITScript program snippet to an MITScript bytecode representation is the following:</p>
+
+
+
+<pre class="prettyprint"><code class=" hljs livecodeserver"><span class="hljs-function"><span class="hljs-keyword">function</span></span>
+{
+  functions = [],
+  constants = [<span class="hljs-number">1</span>, <span class="hljs-number">2</span>],
+  parameter_count = <span class="hljs-number">0</span>,
+  local_vars = [x, y, z],
+  local_ref_vars = [],
+  free_vars = [],
+  names = [ ], 
+  instructions =
+  [
+    load_const  <span class="hljs-number">0</span>
+    store_local <span class="hljs-number">0</span>
+    load_const  <span class="hljs-number">1</span>
+    store_local <span class="hljs-number">1</span>
+    load_local  <span class="hljs-number">0</span>
+    load_local  <span class="hljs-number">1</span>
+    <span class="hljs-built_in">add</span>
+    store_local <span class="hljs-number">2</span>
+  ]
+}</code></pre>
+
+
+
+<h3 id="functions">Functions</h3>
+
+<p>A <em>function</em> consists of a sequence of instructions as well as additional supporting metadata for the function. In the abbreviated presentation of this example, this additional metadata includes the function's <em>constant pool</em> (the list of constants used by the function's instructions) and the function's <em>locals</em> (the list of local variables in the function).</p>
+
+
+
+<h3 id="instructions">Instructions</h3>
+
+<p>An MITScript instruction consists of an operation code and an optional operand (which we refer to as <em>operand 0</em>).  For example, the instruction <code>load_const 0</code> loads the constant at index <code>0</code> of the function's constants. The <em>mnemonic</em> or name for the operation code is <code>load_const</code> and operand 0 is the integer value <code>0</code>. The meaning of <code>load_const 0</code> for this example is to load the value <code>1</code> and push that value onto the function's <em>operand stack</em>.</p>
+
+
+
+<h3 id="operand-stack">Operand Stack</h3>
+
+<p>The MITScript VM maintains an operand stack while executing the sequence of instructions within a function. The operand stack is a standard stack (or LIFO queue) that stores intermediate values during the execution of the function. Instructions receive their input operands (excluding <em>operand 0</em>) by popping values off of the operand stack. Instructions produce values by pushing their results onto the stack.</p>
+
+<p>As a note, each function execution maintains its own operand stack. Therefore, if a function calls another function, the virtual machine creates a new, empty operand stack for the second function that only the second function operates on. Once invocation of the second function returns, the virtual machine deallocates its operand stack.</p>
+
+
+
+<h3 id="step-by-step-example">Step-by-Step Example</h3>
+
+<p>We next illustrate the execution of the above function step-by-step. We present the contents of the function's frame and operand stack both before and after each instruction with their values specified in braces.</p>
+
+
+
+<pre class="prettyprint"><code class=" hljs css"><span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : uninit , y : uninit, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">}</span></span> }
+0: <span class="hljs-tag">load_const</span> 0
+<span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : uninit , y : uninit, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">1 }</span></span> }</code></pre>
+
+<p>The <code>load_const i</code> instruction pushes the <code>i</code>th constant in the function's constant pool onto the operand stack.  In this case, the <code>0</code>th constant is the integer value 1.</p>
+
+
+
+<pre class="prettyprint"><code class=" hljs css"><span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : uninit , y : uninit, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">}</span></span> }
+1: <span class="hljs-tag">store_local</span> 0
+<span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : <span class="hljs-number">1</span> , y : uninit, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">}</span></span> }</code></pre>
+
+<p>The <code>store_local i</code> instruction stores the top of the operand stack into the function's <code>i</code>th local variable as determined by the function's locals array. The instruction also pops or removes the top value of the operand stack. In this case the <code>0</code>th variable is the variable <code>x</code>.</p>
+
+
+
+<pre class="prettyprint"><code class=" hljs css"><span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : <span class="hljs-number">1</span> , y : uninit, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">}</span></span> }
+2: <span class="hljs-tag">load_const</span> 1
+<span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : <span class="hljs-number">1</span> , y : uninit, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">2 }</span></span> }</code></pre>
+
+<p>As above, <code>load_const i</code>  loads the <code>i</code>th constant onto the operand stack. In this case the constant is the integer value 2.</p>
+
+
+
+<pre class="prettyprint"><code class=" hljs css"><span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : <span class="hljs-number">1</span> , y : uninit, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">2 }</span></span> }
+3: <span class="hljs-tag">store_local</span> 1
+<span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : <span class="hljs-number">1</span> , y : <span class="hljs-number">2</span>, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{  <span class="hljs-rule">}</span></span> }</code></pre>
+
+<p>As above, <code>store_local i</code> stores the top of the operand stack into the function's <code>i</code>th local variable. In this case, the 1st variable is the variable <code>y</code>.</p>
+
+
+
+<pre class="prettyprint"><code class=" hljs css"><span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : <span class="hljs-number">1</span> , y : <span class="hljs-number">2</span>, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{  <span class="hljs-rule">}</span></span> }
+4: <span class="hljs-tag">load_local</span>  0
+<span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : <span class="hljs-number">1</span> , y : <span class="hljs-number">2</span>, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">1 }</span></span> }</code></pre>
+
+<p>The <code>load_local i</code> instruction reads the value of the function's <code>i</code>th local variable and pushes onto the top of the operand stack. Because the function's <code>0</code>th local is the variable <code>x</code> and its value is the integer value <code>1</code>, the instruction pushes 1 onto the operand stack.</p>
+
+
+
+<pre class="prettyprint"><code class=" hljs css"><span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : <span class="hljs-number">1</span> , y : <span class="hljs-number">2</span>, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">1 }</span></span> }
+5: <span class="hljs-tag">load_local</span>  1
+<span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : <span class="hljs-number">1</span> , y : <span class="hljs-number">2</span>, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">1, 2 }</span></span> }</code></pre>
+
+<p>As per the reasoning above, this instruction pushes the integer value 2 onto the operand stack. Note that the top of the stack is the rightmost element.</p>
+
+
+
+<pre class="prettyprint"><code class=" hljs css"><span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : <span class="hljs-number">1</span> , y : <span class="hljs-number">2</span>, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">1, 2 }</span></span> }
+6: <span class="hljs-tag">add</span>
+<span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : <span class="hljs-number">1</span> , y : <span class="hljs-number">2</span>, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">3 }</span></span> }</code></pre>
+
+<p>The <code>add</code> instruction pops two elements off of the top of the stack, performs the addition of the two elements, and pushes the result back onto the top of the stack. Note that unlike the other instructions, this instruction does not have an operand 0.</p>
+
+
+
+<pre class="prettyprint"><code class=" hljs css"><span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : <span class="hljs-number">1</span> , y : <span class="hljs-number">2</span>, z : uninit</span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">3 }</span></span> }
+7: <span class="hljs-tag">store_local</span> 2
+<span class="hljs-rules">{ <span class="hljs-rule"><span class="hljs-attribute">Frame</span>:<span class="hljs-value"> {x : <span class="hljs-number">1</span> , y : <span class="hljs-number">2</span>, z : <span class="hljs-number">3</span></span></span></span>}, <span class="hljs-tag">Stack</span> : <span class="hljs-rules">{ <span class="hljs-rule">}</span></span> }</code></pre>
+
+<p>As described previously, the <code>store_local i</code> instruction stores the top of operand stack into the specified local variable.</p>
+
+
+
+<h2 id="mitscript-virtual-machine">MITScript Virtual Machine</h2>
+
+<p>The MITScript VM refines the values, program state, and errors of MITScript as seen in Assignment #2.</p>
+
+
+
+<h3 id="values">Values</h3>
+
+<p>As in Assignment #2,  the MITScript VM includes the following values:</p>
+
+<ul>
+<li>None</li>
+<li>Boolean</li>
+<li>Integer</li>
+<li>String</li>
+<li>Record</li>
+</ul>
+
+<p>The MITScript VM also includes the following values:</p>
+
+<ul>
+<li><p>Function: a list of instructions as well as the function's additional supporting metadata.</p></li>
+<li><p>Variable References:  a reference to a local variable that has been defined in a (possibly different) scope.</p></li>
+<li><p>Closure: a tuple consisting of a function to execute and the local variable references that the instructions within the function use.</p></li>
+</ul>
+
+<p>To illustrate these values, consider the following MITScript program:</p>
+
+
+
+<pre class="prettyprint"><code class=" hljs fsharp">x = <span class="hljs-number">1</span>;
+f = <span class="hljs-keyword">fun</span>(y) 
+{
+  g = <span class="hljs-keyword">fun</span>(z)
+  {
+     <span class="hljs-keyword">return</span> x + y + z;
+  };
+};</code></pre>
+
+<p>The most important aspect to this example is the code inside <code>g</code> in that it accesses the <em>global</em> variable <code>x</code>, the <em>reference</em> variable <code>y</code>, and the <em>local</em> variable <code>z</code>. In the MITScript VM, each of these variables have different access instructions as well as different runtime machinery to support their execution. To understand these differing implementations, consider the following bytecode translation for this program:</p>
+
+
+
+<pre class="prettyprint"><code class=" hljs livecodeserver"><span class="hljs-function"><span class="hljs-keyword">function</span> </span>
+{
+  functions =
+  [
+    <span class="hljs-function"><span class="hljs-keyword">function</span></span>
+    {
+      functions =[
+        <span class="hljs-function"><span class="hljs-keyword">function</span></span>
+         {
+          functions  = [],
+          constants  = [],
+          parameter_count = <span class="hljs-number">1</span>,
+          local_vars = [z],
+          local_ref_vars = [],
+          free_vars  = [y],
+          names = [x],
+          instructions = [
+             load_global <span class="hljs-number">0</span>
+             push_ref    <span class="hljs-number">0</span>
+             load_ref   
+             <span class="hljs-built_in">add</span>
+             load_local  <span class="hljs-number">0</span>
+             <span class="hljs-built_in">add</span>
+             <span class="hljs-constant">return</span>
+          ]
+         }
+      ],
+      constants = [None, <span class="hljs-number">1</span>],
+      parameter_count = <span class="hljs-number">1</span>,
+      local_vars = [y, g],
+      local_ref_vars = [y],
+      free_vars = [],
+      names = [],
+      instructions = [
+        push_ref      <span class="hljs-number">0</span>
+        load_const    <span class="hljs-number">1</span>
+        load_func     <span class="hljs-number">0</span>
+        alloc_closure
+        store_local   <span class="hljs-number">1</span>
+        load_const    <span class="hljs-number">0</span>
+        <span class="hljs-constant">return</span>
+       ] 
+    }
+  ],
+  constants = [<span class="hljs-number">1</span>, None],
+  parameter_count = <span class="hljs-number">1</span>,
+  local_vars = [], 
+  local_ref_vars = [],
+  free_vars = [],
+  names = [x, f],
+  instructions = 
+  [
+    load_const   <span class="hljs-number">1</span>
+    store_global <span class="hljs-number">0</span>
+    load_func    <span class="hljs-number">0</span>
+    store_global <span class="hljs-number">1</span>
+  ] 
+}</code></pre>
+
+<p><strong>Functions</strong>: In the MITScript VM, each function includes an expanded set of metadata that capture the semantics of managing local variables (including parameters).</p>
+
+<ul>
+<li>parameter_count : the number of parameters for the function</li>
+<li>local_vars : the list of local variables of the function</li>
+<li>local_ref_vars : the list of local variables that are accessed by reference</li>
+<li>names: the list of global variable and field names accessed inside the function </li>
+<li>free_vars : the list of non-global and non-local variables (variables from a parent scope) that are access within this function's instructions</li>
+<li>constants : a list of constants (e.g., None, 1, â€œhelloâ€) used within this function</li>
+<li>functions : a list of definitions of the functions nested within this function</li>
+</ul>
+
+<p><strong>Variables</strong>: Given this metadata, we can now distinguish and give a semantics to the machinery of variable access.</p>
+
+<ul>
+<li><p><em>Global Variable</em>: global variables are accessed by the <code>load_global i</code> instruction. The instruction reads the value of a global variable using the index <code>i</code>. In this case, <code>i</code> refers is the index into the <code>names</code> list of the enclosing function. The instruction therefore accesses the variable named <code>names[i]</code>.</p></li>
+<li><p><em>Reference Variable</em>: To support accessing variables that are allocated in other scopes, the MITScript VM supports reference variables. Reference variables are variables that are accessed via an address that has been passed to the function when the function's closure was created. </p>
+
+<p>The <code>push_ref i</code> instruction loads the reference to a variable onto the stack.  In this case <code>i</code> refers is the index into either the enclosing function's <code>local_ref_vars</code> or <code>free_vars</code> array (if <code>i</code> is greater than the length of <code>local_ref_vars</code>).   </p>
+
+<p>The <code>load_ref</code> instruction dereferences the address associated with the reference at the top of the stack to load a new value onto the stack.</p></li>
+<li><p><em>Local Variable</em>: As discussed in the previous section, local variables are accessed by the <code>load_local i</code> instruction.</p></li>
+</ul>
+
+<p><strong>Closures</strong>: To support reference variables, creating closures on the MITScript VM is different than the corresponding implementation in Assignment #2. In Assignment #2, a closure consisted of a function to execute, as well as a pointer to the frame to be used as a parent frame when executing the function. </p>
+
+<p>In the MITScript VM, instead of taking a pointer to a frame, a closure takes a list of references to the free variables in the nested function. This design is more efficent in that each access to variable inside the function need not recursively search its ancestry of frames to find the appropriate value for the variable.</p>
+
+<p>The instructions for the function<code>f</code> above illustrates how <code>f</code> creates a closure for variable <code>g</code>. The instruction sequence first pushes a reference to <code>y</code> onto the stack (via the <code>push_ref 0</code> instruction), then pushes the number of variable references that it will pass on the operand stack, and then pushes the function that corresponds to <code>g</code> (<code>load_func 0</code>). </p>
+
+<p>The <code>alloc_closure</code> instruction, consumes and stores the function and variable references and then asserts that the number of passed variable references matches the number of free variables in the function.</p>
+
+<p>The files VirtualMachine/types.h and VirtualMachine/instructions.h give a more precise explanation of a function's instructions and metadata.</p>
+
+
+
+<h3 id="program-state">Program State</h3>
+
+<p><strong>Frames</strong>: A stack frame in MITScript includes 1) dedicated storage for the value of local variables,  2) dedicated storage for local variable references that are accessed/passed in/passed by reference,  and 3) an operand stack.</p>
+
+<p><strong>Heap</strong>:  Some of your runtime structures will be allocated in a heap. It is up to your discretion as to how you store an MITScript's data and runtime structures for this assignment. However,  your submission for the written portion of this project should match the implementation strategy your group has chosen.</p>
+
+
+
+<h3 id="errors">Errors</h3>
+
+<p>The MITScript VM reports the same exceptions for the error conditions as in Assignment #2.  At the bytecode level, however, there are also new opportunities for execution to encounter an error.  For example, consider this alternative translation of our first  MITScript program:</p>
+
+
+
+<pre class="prettyprint"><code class=" hljs livecodeserver"><span class="hljs-function"><span class="hljs-keyword">function</span>:</span>
+  local_vars = [x, y, z],
+  constants = [<span class="hljs-number">1</span>, <span class="hljs-number">2</span>],
+
+  instructions = 
+  [
+    <span class="hljs-number">0</span>: load_const  <span class="hljs-number">0</span>
+    <span class="hljs-number">1</span>: store_local <span class="hljs-number">0</span>
+    <span class="hljs-number">2</span>: load_const  <span class="hljs-number">1</span>
+    <span class="hljs-number">3</span>: store_local <span class="hljs-number">1</span>
+    <span class="hljs-number">4</span>: load_local  <span class="hljs-number">0</span>
+    <span class="hljs-number">5</span>: <span class="hljs-built_in">add</span>
+    <span class="hljs-number">6</span>: store_local <span class="hljs-number">2</span>
+  ]</code></pre>
+
+<p>In this case, the bytecode compiler has failed to generate the code to load the value of <code>y</code> prior to the <code>add</code> instructions on <code>line 5</code>. The height of the operand stack prior to <code>line 5</code> is <code>1</code> and,  therefore,  the <code>add</code> instruction will fail because it cannot pop its two necessary operands from the stack. </p>
+
+<p>Your bytecode interpreter should generate the following additional exceptions:</p>
+
+<ul>
+<li>InsufficentStackException: when an instruction cannot pop a sufficient number of arguments from the operand stack</li>
+<li>RuntimeException: for all other VM error conditions not covered by Assignment #2.</li>
+</ul>
+
+
+
+<h3 id="native-functions">Native Functions</h3>
+
+<p>For this assignment, we will use the convention that the first three functions in the functions list of the outermost function (the function for the whole program) correspond to the <code>print</code>,  <code>input</code>, and <code>intcast</code> functions, respectively.</p>
+
+<p>Your bytecode interpreter should detect when one of these functions has been called <br>
+and perform the correct action.</p>
+
+<h2 id="deliverables">Deliverables</h2>
+
+<p>You will deliver a compiler, an interpreter,  test cases, and a written assignment.</p>
+
+
+
+<h3 id="compiler">Compiler</h3>
+
+<p>Your compiler should translate the AST representation of an MITScript program to a single bytecode function. As explained above, the definition of a function within the program should be located within the â€œfunctionsâ€ field of that function's parent function.</p>
+
+<p>If the function does not syntatically have a parent function (it is defined at the top level), then its parent should be the single bytecode function that you generate for the whole program.</p>
+
+<p>We have included a pretty printer class as part of the skeleton that may use to pretty print your bytecode representation for output.</p>
+
+
+
+<h3 id="interpreter">Interpreter</h3>
+
+<p>Your interpeter should interpret your compiled bytecode representation and produce its results. Your intereter should support two modes of operation:</p>
+
+<ol>
+<li><p><strong>MITScript Source</strong>: if passed the option <code>-s</code> on the command, then it should parse the input as MITScript source code.</p></li>
+<li><p><strong>MITScript Bytecode</strong>: if passed the option <code>-b</code> on the command line, then it should treat the input as MITScript VM bytecode. We have provided a bytecode parser in the skeleton to help support this mode of operation.</p></li>
+</ol>
+
+
+
+<h3 id="test-cases">Test Cases</h3>
+
+<p>In addition to your compiler and interpreter, you should submit 5 tests named bytecodetest[1-5].mit. Your tests should not use the â€œinputâ€ function, but should use print. </p>
+
+
+
+<h3 id="written-assignment">Written Assignment</h3>
+
+<p>The file VirtualMachine/instructions.h provides an English language specification of the semantics of each instruction. For the written portion of the assignment, your task is write a semantics using the notation we have covered in class as well as was presented in Assignment #2.</p>
+
+<p>For the written assignment, you need only formalize the following MITScript VM instructions and the runtime structures required to support their operation.</p>
+
+<ul>
+<li>LoadConst</li>
+<li>LoadFunc</li>
+<li>LoadLocal</li>
+<li>StoreLocal</li>
+<li>LoadGlobal</li>
+<li>StoreGlobal</li>
+<li>PushReference</li>
+<li>LoadReference</li>
+<li>StoreReference</li>
+<li>AllocClosure </li>
+<li>Call</li>
+<li>Add</li>
+<li>Dup</li>
+<li>Swap</li>
+<li>Pop</li>
+</ul>
+
+<p>For simplicity,  you need only support Integer, Function, Variable References, and Closure values.</p>
+
+<p><strong>Collaboration Policy</strong>: Collaboration with your classmates is allowed. However,  you are expected to independently write and submit your own solution.</p>
+
+
+
+<h3 id="submission-instructions">Submission Instructions</h3>
+
+<p>As before, submission of your assigment should be accomplished by pushing your code to a branch with the name a3-submission.</p>
+
+<p>The last assignment pushed to this branch before the assignment due date is the one we will grade unless you notify us otherwise.</p>
+
+
+
+<h2 id="implementation-notes">Implementation Notes</h2>
+
+<p>There are two main programming patterns that you will see in this assignment: the visitor pattern and the interpreter loop.</p>
+
+<ul>
+<li><p>Visitor Pattern. As with your interpreter in Assignment #2,  your compiler is best structured with the Visitor pattern. Your compiler will recursively traverse the AST to generate code and combine small sequences of code into larger sequences.</p></li>
+<li><p>Interpreter Loop. The instructions for a function is a flat sequence of instructions. The interpreter for a flat sequence is best structured as an <em>interpreter loop</em>. An interpreter loop maintains an instruction pointer that points to the current instruction to be executed. </p>
+
+<p>When the interpreter finishes performing an instruction, it increments the instruction pointer to point to the next instruction. For control flow instructions, the next pointee of the instruction pointer may not be the next immediate instruction. Instead, it may a different instruction as determined by the jump destination of the control flow instruction.</p></li>
+</ul></div></body>
+</html>
